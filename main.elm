@@ -8,7 +8,10 @@ import Random
 import Char
 import String
 import List
+import Json.Decode as Json
 import Array
+import Http
+import Task
 
 
 main =
@@ -31,6 +34,8 @@ type alias Model =
     , anzahlDerFehler : Int
     , erraten : List String
     , bereitsVorhandeneVerschlüsselungen : List Int
+    , debug : Int
+    , fehlermeldung : String
     }
 
 
@@ -42,27 +47,25 @@ type alias BuchstabenEintrag =
 
 init : ( Model, Cmd Msg )
 init =
-    ( Model
-        "Hallo Welt!"
-        (baueDieBuchstabenTabelle [] 65 (65 + 26))
+    Model
+        "Und am Abend ging der Mond auf. Ich frage mich, ob da wohl Leute wohnen. Moment, ich geh mal gucken."
+        []
         0
         []
         []
-    , Cmd.none
-    )
+        0
+        "Einen Moment bitte..."
+        ! [ holeEchtenSatzVomServer "" ]
 
 
-baueDieBuchstabenTabelle : List BuchstabenEintrag -> Int -> Int -> List BuchstabenEintrag
+baueDieBuchstabenTabelle : List (Cmd Msg) -> Int -> Int -> List (Cmd Msg)
 baueDieBuchstabenTabelle buchstabenTabelle aktuellerBuchstabe letzterBuchstabe =
-    if aktuellerBuchstabe > letzterBuchstabe then
+    if aktuellerBuchstabe >= letzterBuchstabe then
         buchstabenTabelle
     else
         baueDieBuchstabenTabelle
             (buchstabenTabelle
-                ++ [ { geheimerBuchstabe = Char.fromCode (aktuellerBuchstabe)
-                     , zufälligerBuchstabe = 'H'
-                     }
-                   ]
+                ++ [ Task.perform identity identity (Task.succeed (NeuerVerschlüsselterBuchstabe (Char.fromCode aktuellerBuchstabe) 0)) ]
             )
             (aktuellerBuchstabe + 1)
             letzterBuchstabe
@@ -122,7 +125,10 @@ verschluessleDenBuchstaben model echterBuchstabe indexInDerTabelle =
 
 type Msg
     = BuchstabeGeraten Int String
-    | NeuerVerschlüsselterBuchstabe String Int
+    | NeuerVerschlüsselterBuchstabe Char Int
+    | SatzHolenWarErfolgreich String
+    | FetchFail Http.Error
+    | NutzerMöchteNeuenSatz
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -139,14 +145,50 @@ update msg model =
                     ( { model | anzahlDerFehler = model.anzahlDerFehler + 1 }, Cmd.none )
 
         NeuerVerschlüsselterBuchstabe echterBuchstabe codeDesZufälligenBuchstabens ->
-            if List.member codeDesZufälligenBuchstabens model.bereitsVorhandeneVerschlüsselungen then
-                ( model, Random.generate (NeuerVerschlüsselterBuchstabe echterBuchstabe) (Random.int 1 6) )
+            if (codeDesZufälligenBuchstabens == 0) || (List.member codeDesZufälligenBuchstabens model.bereitsVorhandeneVerschlüsselungen) then
+                ( { model | debug = model.debug + 1 }, Random.generate (NeuerVerschlüsselterBuchstabe echterBuchstabe) (Random.int 65 (65 + 26)) )
             else
-                ( { model
-                    | bereitsVorhandeneVerschlüsselungen = model.bereitsVorhandeneVerschlüsselungen ++ [ codeDesZufälligenBuchstabens ]
-                  }
-                , Cmd.none
-                )
+                { model
+                    | buchstabenListe =
+                        model.buchstabenListe
+                            ++ [ { geheimerBuchstabe = echterBuchstabe
+                                 , zufälligerBuchstabe = Char.fromCode (codeDesZufälligenBuchstabens)
+                                 }
+                               ]
+                    , bereitsVorhandeneVerschlüsselungen = (model.bereitsVorhandeneVerschlüsselungen ++ [ codeDesZufälligenBuchstabens ])
+                }
+                    ! []
+
+        SatzHolenWarErfolgreich neuerSatz ->
+            { model
+                | echterSatz = neuerSatz
+                , fehlermeldung = ""
+            }
+                ! (baueDieBuchstabenTabelle [] 65 (65 + 26))
+
+        FetchFail err ->
+            ( { model | fehlermeldung = "Es konnte kein Satz geladen werden; " ++ toString err }, Cmd.none )
+
+        NutzerMöchteNeuenSatz ->
+            model ! [ holeEchtenSatzVomServer "" ]
+
+
+
+-- HTTP
+
+
+holeEchtenSatzVomServer : String -> Cmd Msg
+holeEchtenSatzVomServer topic =
+    let
+        url =
+            "http://localhost/satz.php"
+    in
+        Task.perform FetchFail SatzHolenWarErfolgreich (Http.get decodeWunschpunschJson url)
+
+
+decodeWunschpunschJson : Json.Decoder String
+decodeWunschpunschJson =
+    Json.at [ "echterSatz" ] Json.string
 
 
 
@@ -173,8 +215,12 @@ view model =
                 [ span [] [] ]
             )
         , Html.hr [] []
-        , text (toString model.buchstabenListe)
         , zeigeAnzahlDerFehler model
+        , button [ Html.Events.onClick NutzerMöchteNeuenSatz ] [ text "Neuen Satz holen" ]
+          {- , text (toString model.debug)
+             , text (toString model.buchstabenListe)
+             , text (toString model.bereitsVorhandeneVerschlüsselungen)
+          -}
         ]
 
 
@@ -249,7 +295,9 @@ zeigeAnzahlDerFehler : Model -> Html.Html Msg
 zeigeAnzahlDerFehler model =
     let
         message =
-            if model.anzahlDerFehler > 0 then
+            if String.length model.fehlermeldung > 0 then
+                model.fehlermeldung
+            else if model.anzahlDerFehler > 0 then
                 "Du hast schon " ++ (toString model.anzahlDerFehler) ++ "x falsch geraten."
             else
                 ""
