@@ -27,7 +27,8 @@ type alias Model =
     { echterSatz : String
     , buchstabenListe :
         List BuchstabenEintrag
-        --, anzahlDerFehler : Int
+    , anzahlDerFehler : Int
+    , erraten : List String
     }
 
 
@@ -39,7 +40,7 @@ type alias BuchstabenEintrag =
 
 model : Model
 model =
-    Model ("Hallo Welt!") (baueDieBuchstabenTabelle [] 65 (65 + 26))
+    Model ("Hallo Welt!") (baueDieBuchstabenTabelle [] 65 (65 + 26)) 0 []
 
 
 baueDieBuchstabenTabelle : List BuchstabenEintrag -> Int -> Int -> List BuchstabenEintrag
@@ -58,10 +59,16 @@ baueDieBuchstabenTabelle buchstabenTabelle aktuellerBuchstabe letzterBuchstabe =
             letzterBuchstabe
 
 
-verschluessleDenBuchstaben : String -> Int -> Maybe String
-verschluessleDenBuchstaben echterBuchstabe indexInDerTabelle =
+type Verschlüsselungsergebnis
+    = NichtVerschlüsselt
+    | Verschlüsselt String
+    | Entschlüsselt String
+
+
+verschluessleDenBuchstaben : Model -> String -> Int -> Verschlüsselungsergebnis
+verschluessleDenBuchstaben model echterBuchstabe indexInDerTabelle =
     if indexInDerTabelle >= List.length model.buchstabenListe then
-        Nothing
+        NichtVerschlüsselt
     else
         let
             liste =
@@ -79,18 +86,25 @@ verschluessleDenBuchstaben echterBuchstabe indexInDerTabelle =
         in
             case c of
                 Nothing ->
-                    Nothing
+                    NichtVerschlüsselt
 
                 Just c2 ->
                     case tabellenEintrag of
                         Nothing ->
-                            Nothing
+                            NichtVerschlüsselt
 
                         Just echterTabellenEintrag ->
                             if echterTabellenEintrag.geheimerBuchstabe == c2 then
-                                Just (String.fromChar echterTabellenEintrag.zufälligerBuchstabe)
+                                let
+                                    zufälligerBuchstabe =
+                                        (String.fromChar echterTabellenEintrag.zufälligerBuchstabe)
+                                in
+                                    if List.member echterBuchstabe model.erraten then
+                                        Entschlüsselt zufälligerBuchstabe
+                                    else
+                                        Verschlüsselt zufälligerBuchstabe
                             else
-                                verschluessleDenBuchstaben echterBuchstabe (indexInDerTabelle + 1)
+                                verschluessleDenBuchstaben model echterBuchstabe (indexInDerTabelle + 1)
 
 
 
@@ -105,8 +119,14 @@ update : Msg -> Model -> Model
 update msg model =
     case msg of
         BuchstabeGeraten derWievielteBuchstabe geratenerBuchstabe ->
-            --{ model | anzahlDerFehler = 1 }
-            model
+            let
+                echterBuchstabe =
+                    String.toUpper (String.slice derWievielteBuchstabe (derWievielteBuchstabe + 1) model.echterSatz)
+            in
+                if String.toUpper geratenerBuchstabe == echterBuchstabe then
+                    { model | erraten = model.erraten ++ [ echterBuchstabe ] }
+                else
+                    { model | anzahlDerFehler = model.anzahlDerFehler + 1 }
 
 
 
@@ -125,6 +145,7 @@ view model =
             )
         , Html.hr [] []
         , text (toString model.buchstabenListe)
+        , zeigeAnzahlDerFehler model
         ]
 
 
@@ -144,7 +165,7 @@ zeigeDieBuchstaben model aktuellerBuchstabe derDom =
                     ++ [ span
                             [ style
                                 [ ( "display", "inline-block" )
-                                , ( "min-width", "1em" )
+                                , ( "min-width", "1.2em" )
                                 , ( "text-align", "center" )
                                 , ( "vertical-align", "top" )
                                 ]
@@ -159,18 +180,20 @@ buchstabenInput : Model -> Int -> String -> List (Html.Html Msg)
 buchstabenInput model aktuellerBuchstabenIndex echterBuchstabe =
     let
         verschlüsselungsergebnis =
-            verschluessleDenBuchstaben (String.toUpper echterBuchstabe) 0
+            verschluessleDenBuchstaben model (String.toUpper echterBuchstabe) 0
     in
         case verschlüsselungsergebnis of
-            Nothing ->
-                -- war nicht verschlüsselt
+            NichtVerschlüsselt ->
                 [ text echterBuchstabe ]
 
-            Just zufälligerBuchstabe ->
+            Verschlüsselt zufälligerBuchstabe ->
                 [ text zufälligerBuchstabe
                 , Html.br [] []
                 , Html.input
                     [ placeholder "?"
+                    , attribute "onfocus" "this.select()"
+                    , value ""
+                      -- bereits eingegebene falsche Zeichen löschen
                     , style
                         [ ( "width", "1em" )
                         , ( "text-align", "center" )
@@ -180,16 +203,26 @@ buchstabenInput model aktuellerBuchstabenIndex echterBuchstabe =
                     []
                 ]
 
+            Entschlüsselt zufälligerBuchstabe ->
+                [ text zufälligerBuchstabe
+                , Html.br [] []
+                , span
+                    [ style
+                        [ ( "color", "green" )
+                        , ( "font-weight", "bold" )
+                        ]
+                    ]
+                    [ text echterBuchstabe ]
+                ]
 
 
-{- zeigeAnzahlDerFehler : Model -> Html.Html Msg
-   zeigeAnzahlDerFehler model =
-       let
-           message =
-               if model.anzahlDerFehler > 0 then
+zeigeAnzahlDerFehler : Model -> Html.Html Msg
+zeigeAnzahlDerFehler model =
+    let
+        message =
+            if model.anzahlDerFehler > 0 then
                    "Du hast schon " ++ (toString model.anzahlDerFehler) ++ "x falsch geraten."
-               else
-                   ""
-       in
-           div [ style [ ( "color", "red" ) ] ] [ text message ]
--}
+            else
+                ""
+    in
+        div [ style [ ( "color", "red" ) ] ] [ text message ]
