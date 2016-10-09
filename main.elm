@@ -12,10 +12,11 @@ import Array
 
 
 main =
-    App.beginnerProgram
-        { model = model
+    App.program
+        { init = init
         , view = view
         , update = update
+        , subscriptions = subscriptions
         }
 
 
@@ -29,6 +30,7 @@ type alias Model =
         List BuchstabenEintrag
     , anzahlDerFehler : Int
     , erraten : List String
+    , bereitsVorhandeneVerschlüsselungen : List Int
     }
 
 
@@ -38,9 +40,16 @@ type alias BuchstabenEintrag =
     }
 
 
-model : Model
-model =
-    Model ("Hallo Welt!") (baueDieBuchstabenTabelle [] 65 (65 + 26)) 0 []
+init : ( Model, Cmd Msg )
+init =
+    ( Model
+        "Hallo Welt!"
+        (baueDieBuchstabenTabelle [] 65 (65 + 26))
+        0
+        []
+        []
+    , Cmd.none
+    )
 
 
 baueDieBuchstabenTabelle : List BuchstabenEintrag -> Int -> Int -> List BuchstabenEintrag
@@ -113,9 +122,10 @@ verschluessleDenBuchstaben model echterBuchstabe indexInDerTabelle =
 
 type Msg
     = BuchstabeGeraten Int String
+    | NeuerVerschlüsselterBuchstabe String Int
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         BuchstabeGeraten derWievielteBuchstabe geratenerBuchstabe ->
@@ -124,9 +134,28 @@ update msg model =
                     String.toUpper (String.slice derWievielteBuchstabe (derWievielteBuchstabe + 1) model.echterSatz)
             in
                 if String.toUpper geratenerBuchstabe == echterBuchstabe then
-                    { model | erraten = model.erraten ++ [ echterBuchstabe ] }
+                    ( { model | erraten = model.erraten ++ [ echterBuchstabe ] }, Cmd.none )
                 else
-                    { model | anzahlDerFehler = model.anzahlDerFehler + 1 }
+                    ( { model | anzahlDerFehler = model.anzahlDerFehler + 1 }, Cmd.none )
+
+        NeuerVerschlüsselterBuchstabe echterBuchstabe codeDesZufälligenBuchstabens ->
+            if List.member codeDesZufälligenBuchstabens model.bereitsVorhandeneVerschlüsselungen then
+                ( model, Random.generate (NeuerVerschlüsselterBuchstabe echterBuchstabe) (Random.int 1 6) )
+            else
+                ( { model
+                    | bereitsVorhandeneVerschlüsselungen = model.bereitsVorhandeneVerschlüsselungen ++ [ codeDesZufälligenBuchstabens ]
+                  }
+                , Cmd.none
+                )
+
+
+
+-- SUBSCRIPTIONS
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.none
 
 
 
@@ -221,7 +250,7 @@ zeigeAnzahlDerFehler model =
     let
         message =
             if model.anzahlDerFehler > 0 then
-                   "Du hast schon " ++ (toString model.anzahlDerFehler) ++ "x falsch geraten."
+                "Du hast schon " ++ (toString model.anzahlDerFehler) ++ "x falsch geraten."
             else
                 ""
     in
