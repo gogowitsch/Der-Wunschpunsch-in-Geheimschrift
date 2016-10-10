@@ -181,7 +181,7 @@ holeEchtenSatzVomServer : String -> Cmd Msg
 holeEchtenSatzVomServer topic =
     let
         url =
-            "http://localhost/satz.php"
+            "http://blaeul.de/Der-Wunschpunsch-in-Geheimschrift/satz.php"
     in
         Task.perform FetchFail SatzHolenWarErfolgreich (Http.get decodeWunschpunschJson url)
 
@@ -259,7 +259,9 @@ buchstabenInput model aktuellerBuchstabenIndex echterBuchstabe =
     in
         case verschlüsselungsergebnis of
             NichtVerschlüsselt ->
-                [ text echterBuchstabe ]
+                [ text echterBuchstabe
+                , Html.br [] []
+                , text echterBuchstabe ]
 
             Verschlüsselt zufälligerBuchstabe ->
                 [ text zufälligerBuchstabe
