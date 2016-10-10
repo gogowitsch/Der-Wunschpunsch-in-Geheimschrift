@@ -1,7 +1,10 @@
 <?php
-$sText = join(' ', array_map(function($input) {
+
+function silbentrennung_am_zeilenende_entfernen($input) {
     return preg_replace("/([a-z])- +/", "$1", $input);
-}, file('Michael Ende - Der Wunschpunsch.txt')));
+}
+$sText = join(' ', array_map('silbentrennung_am_zeilenende_entfernen',
+    file('Michael Ende - Der Wunschpunsch.txt')));
 
 $sText = str_replace(array("\n", "\r"), "", $sText);
 
